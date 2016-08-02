@@ -8,33 +8,53 @@ import java.awt.event.ActionEvent;
 import java.awt.event.ActionListener;
 import java.awt.event.KeyEvent;
 import java.awt.event.KeyListener;
+import java.awt.geom.Ellipse2D;
 import java.awt.geom.Rectangle2D;
 import java.awt.geom.RoundRectangle2D;
 import java.awt.image.BufferedImage;
+import java.io.BufferedReader;
 import java.io.File;
+import java.io.FileNotFoundException;
+import java.io.FileReader;
 import java.io.IOException;
+import java.io.PrintWriter;
+import java.io.UnsupportedEncodingException;
 import java.util.ArrayList;
 import java.util.Iterator;
 
 import javax.imageio.ImageIO;
+import javax.swing.JOptionPane;
 import javax.swing.JPanel;
 import javax.swing.Timer;
+
 
 public class Board extends JPanel implements ActionListener {
 
 	private static final long serialVersionUID = 1L;
 	
-	boolean isRunning = true;
-	private Timer timer;
-	ArrayList<String> gameMap = new ArrayList<String>();
-	ArrayList<RoundRectangle2D> gameTiles = new ArrayList<RoundRectangle2D>();
-	ArrayList<Rectangle2D> dotTiles = new ArrayList<Rectangle2D>();
-	public ArrayList<BufferedImage> pacImages = new ArrayList<BufferedImage>();
-	public ArrayList<BufferedImage> ghostImages = new ArrayList<BufferedImage>();
-	Pacman player = new Pacman(68, 72);
+	private boolean isRunning = false;
+	private Timer mainTimer = new Timer(50, null);
+	private Timer ghostScareTimer = new Timer(8000, null);
+	
+	private ArrayList<String> gameMap = new ArrayList<String>();
+	
+	private ArrayList<RoundRectangle2D> gameTiles = new ArrayList<RoundRectangle2D>();
+	private ArrayList<Rectangle2D> dotTiles = new ArrayList<Rectangle2D>();
+	private ArrayList<Ellipse2D> powerTiles = new ArrayList<Ellipse2D>();
+	
+	private ArrayList<BufferedImage> pacImages = new ArrayList<BufferedImage>();
+	private ArrayList<BufferedImage> ghostImages = new ArrayList<BufferedImage>();
+	private BufferedImage pacLogo = null;
+	
+	Pacman player = new Pacman(248, 218);
 	Ghost [] ghosts = { new Ghost(238, 181), new Ghost(248, 181), new Ghost(258, 181), new Ghost(268, 181) };
-	int score = 0;
-	int pacLives = 3;
+	
+	private int score = 0;
+	private int pacLives = 0;
+	
+	
+	String topScorer = "";
+	String highScore = "";
 	
 	public class Pacman {
 		
@@ -58,28 +78,37 @@ public class Board extends JPanel implements ActionListener {
 			
 			frame = (frame + 1) % 3;
 			
+			Rectangle location = getBounds();
+			
+			if (location.x < 47) {
+				xPos = 447;
+			}
+			
+			if (location.x > 447) {
+				xPos = 47;
+			}
+			
 			if (dirX == 1 && dirY == 0) {
-				if (isValidMove(2, 0)) {
-					xPos += 2;
+				if (isValidMove(location, 3, 0)) {
+					xPos += 3;
 				}
 			} else if (dirX == -1 && dirY == 0) {
-				if (isValidMove(-2, 0)) {
-					xPos -= 2;
+				if (isValidMove(location, -3, 0)) {
+					xPos -= 3;
 				}
 			} else if (dirX == 0 && dirY == 1) {
-				if (isValidMove(0, 2)) {
-					yPos += 2;
+				if (isValidMove(location, 0, 3)) {
+					yPos += 3;
 				}
 			} else if (dirX == 0 && dirY == -1) {
-				if (isValidMove(0, -2)) {
-					yPos -= 2;
+				if (isValidMove(location, 0, -3)) {
+					yPos -= 3;
 				}
 			}
 		}
 		
-		public boolean isValidMove(int xDir, int yDir) {
+		public boolean isValidMove(Rectangle location, int xDir, int yDir) {
 			
-			Rectangle location = player.getBounds();
 			location.x += xDir;
 			location.y += yDir;
 			
@@ -121,9 +150,12 @@ public class Board extends JPanel implements ActionListener {
 	
 	public class Ghost {
 		
-		int xPos, yPos, isValidMove;
-		int dirX = 0, dirY = 0, size = 14;
-		int frame = 0;
+		private int xPos, yPos;
+		private int dirX = 0, dirY = 0, size = 14;
+		private int frame = 0;
+		private int speed = 3;
+		
+		boolean edible = false;
 		boolean pathLeft = false, pathRight = false, pathDown = false, pathUp = false;
 		
 		public Ghost(int xPos, int yPos) {
@@ -171,21 +203,39 @@ public class Board extends JPanel implements ActionListener {
 			int xDiff = getXDifference();
 			int yDiff = getYDifference();
 		
-			int rand = (int)(Math.random() * 2) + 1;
+			int rand = (int)(Math.random() * 4) + 1;
 			
-			if (pathLeft && xDiff > 0 && dirX != 1 && rand == 1) {
-				dirX = -1;
-				dirY = 0;
-			} else if (pathRight && xDiff < 0 && dirX != -1 && rand == 2) {
-				dirX = 1;
-				dirY = 0;
-			} else if (pathDown && yDiff < 0 && dirY != -1 && rand == 1) {
-				dirX = 0;
-				dirY = 1;
-			} else if (pathUp && yDiff > 0 && dirY != 1 && rand == 2) {
-				dirX = 0;
-				dirY = -1;
+			if (!edible) {
+				if (pathLeft && dirX != 1 && (rand == 1 || xDiff > 0)) {
+					dirX = -1;
+					dirY = 0;
+				} else if (pathRight && dirX != -1 && (rand == 2 || xDiff < 0)) {
+					dirX = 1;
+					dirY = 0;
+				} else if (pathDown && dirY != -1 && (rand == 3 || yDiff < 0)) {
+					dirX = 0;
+					dirY = 1;
+				} else if (pathUp && dirY != 1 && (rand == 4 || yDiff > 0)) {
+					dirX = 0;
+					dirY = -1;
+				}
+			} else {
+				
+				if (pathLeft && dirX != 1 && (rand == 1 || xDiff < 0)) {
+					dirX = -1;
+					dirY = 0;
+				} else if (pathRight && dirX != -1 && (rand == 2 || xDiff > 0)) {
+					dirX = 1;
+					dirY = 0;
+				} else if (pathDown && dirY != -1 && (rand == 3 || yDiff > 0)) {
+					dirX = 0;
+					dirY = 1;
+				} else if (pathUp && dirY != 1 && (rand == 4 || yDiff < 0)) {
+					dirX = 0;
+					dirY = -1;
+				}
 			}
+			
 		}
 		
 		public void getRandDirection() {
@@ -216,27 +266,37 @@ public class Board extends JPanel implements ActionListener {
 			
 			frame ^= 1;
 			
+			Rectangle location = getBounds();
+			
+			if (location.x < 47) {
+				xPos = 447;
+			}
+			
+			if (location.x > 447) {
+				xPos = 47;
+			}
+			
 			if (dirX == 1 && dirY == 0) {
-				if (isValidMove(2, 0)) {
-					xPos += 2;
+				if (isValidMove(location, 3, 0)) {
+					xPos += speed;
 				} else {
 					getRandDirection();
 				}
 			} else if (dirX == -1 && dirY == 0) {
-				if (isValidMove(-2, 0)) {
-					xPos -= 2;
+				if (isValidMove(location, -3, 0)) {
+					xPos -= speed;
 				} else {
 					getRandDirection();
 				}
 			} else if (dirX == 0 && dirY == 1) {
-				if (isValidMove(0, 2)) {
-					yPos += 2;
+				if (isValidMove(location, 0, 3)) {
+					yPos += speed;
 				} else {
 					getRandDirection();
 				}
 			} else if (dirX == 0 && dirY == -1) {
-				if (isValidMove(0, -2)) {
-					yPos -= 2;
+				if (isValidMove(location, 0, -3)) {
+					yPos -= speed;
 				} else {
 					getRandDirection();
 				}
@@ -277,9 +337,8 @@ public class Board extends JPanel implements ActionListener {
 			}
 		}
 		
-		public boolean isValidMove(int xDir, int yDir) {
+		public boolean isValidMove(Rectangle location, int xDir, int yDir) {
 			
-			Rectangle location = getBounds();
 			location.x += xDir;
 			location.y += yDir;
 			
@@ -288,7 +347,6 @@ public class Board extends JPanel implements ActionListener {
 				if (rect.intersects(location)) {
 					return false;
 				}
-
 			}
 			return true;
 		}
@@ -318,28 +376,63 @@ public class Board extends JPanel implements ActionListener {
 		addKeyListener(new GameKeys());
 		setFocusable(true);
 		
-		startTimer();
+		mainTimer.addActionListener(setGameFrameRate);
+		
 		loadImages();
 		initMap();
+		loadHighScore();
+	}
+	
+	private void startGame() {
+		score = 0;
+		pacLives = 1;
+		isRunning = true;
+		startTimer();
+	}
+	
+	public void endGame() {
+		
+		isRunning = false;
+		
+		if (score > Integer.parseInt(highScore)) {
+			setHighScore();
+		}
 	}
 	
 	private void startTimer() {
-		timer = new Timer(40, this);
-		timer.start();
+		mainTimer.start();
+	}
+	
+	private void stopTimer() {
+		mainTimer.stop();
+	}
+	
+	private void loadHighScore() throws IOException {
+		
+		BufferedReader reader = new BufferedReader(new FileReader("src/high-score.txt"));
+		
+		topScorer = reader.readLine();
+		highScore = reader.readLine();
+		
+		reader.close();
 	}
 	
 	@Override
 	public void paintComponent(Graphics g) {
 		
 		super.paintComponent(g);
-		runGame(g);
+		try {
+			runGame(g);
+		} catch (InterruptedException e) {
+			e.printStackTrace();
+		}
 	}
 	
-	private void runGame(Graphics g) {
+	private void runGame(Graphics g) throws InterruptedException {
+		
+		Graphics2D g2d = (Graphics2D) g;
 		
 		if (isRunning) {
-			
-			Graphics2D g2d = (Graphics2D) g;
 			
 			g2d.setColor(Color.BLACK);
 			g2d.fillRect(0, 0, WIDTH, HEIGHT);
@@ -354,35 +447,55 @@ public class Board extends JPanel implements ActionListener {
 				ghost.moveGhost();
 			}
 			
-			if (checkLoseLife()) {
-				pacLives--;
-				resetGamePieces();
-			}
-			
 			drawPacman(g2d);
 			drawGhosts(g2d);
+			
+			if (checkGhostPacCollision()) {
+				
+				pacLives -= 1;
+				
+				if (pacLives == 0 || checkWinCond()) {
+					endGame();
+					resetTiles();
+					initMap();
+				}
+				resetGamePieces();
+			}
 			drawScore(g2d);
+			
+		} else {
+			drawMap(g2d);
+			drawIntroScreen(g2d);
+			stopTimer();
 		}
+	}
+	
+	private void resetTiles() {
+		
+		gameTiles.clear();
+		dotTiles.clear();
+		powerTiles.clear();
 	}
 	
 	private void initMap() {
 		
-		gameMap.add("00000000000000000000000");
-		gameMap.add("0+-------0------------0");
-		gameMap.add("0-00-0-0-0-0-00-00-00-0");
-		gameMap.add("0-00-0-0-0-0-0-----00-0");
-		gameMap.add("0--------0-0-0-000----0");
-		gameMap.add("0-00-0-0-------0---00-0");
-		gameMap.add("0------0-00+00---0-0--0");
-		gameMap.add("0000-0-0-0+++0-000-0-00");
-		gameMap.add("-----0---00000-00------");
-		gameMap.add("000-00-0----------0-000");
-		gameMap.add("0----0-0-0-0-00-0-0---0");
-		gameMap.add("0-00-------0----0---0-0");
-		gameMap.add("0--0-0-0-0-00-0---000-0");
-		gameMap.add("00---0---0------0-----0");
-		gameMap.add("00000000000000000000000");
-		
+		if (gameMap.isEmpty()) {
+			gameMap.add("00000000000000000000000");
+			gameMap.add("0+-------0-----------+0");
+			gameMap.add("0-00-0-0-0-0-00-00-00-0");
+			gameMap.add("0-00-0-0-0-0-0-----00-0");
+			gameMap.add("0--------0-0-0-000----0");
+			gameMap.add("0-00-0-0-------0---00-0");
+			gameMap.add("0------0-00 00---0-0--0");
+			gameMap.add("0000-0-0-0   0-000-0-00");
+			gameMap.add("-----0---00000-00------");
+			gameMap.add("000-00-0--- ------0-000");
+			gameMap.add("0----0-0-0-0-00-0-0---0");
+			gameMap.add("0-00-------0----0---0-0");
+			gameMap.add("0-+0-0-0-0-00-0---000-0");
+			gameMap.add("00---0---0------0----+0");
+			gameMap.add("00000000000000000000000");
+		}
 		for (int i = 0; i < gameMap.size(); i++) {
 			for (int j = 0; j < gameMap.get(i).length(); j++) {
 				
@@ -395,6 +508,9 @@ public class Board extends JPanel implements ActionListener {
 				if (currChar == '-') {
 					dotTiles.add(new Rectangle2D.Double(56 + j * 18, 62 + i * 18, 1, 1));
 				}
+				if (currChar == '+') {
+					powerTiles.add(new Ellipse2D.Double(53 + j * 18, 59 + i * 18, 6, 6));
+				}
 			}
 		}
 	}
@@ -406,7 +522,7 @@ public class Board extends JPanel implements ActionListener {
 		for (RoundRectangle2D rect : gameTiles) {
 			
 			g2d.setColor(new Color(0, 35, 255));
-			g2d.setStroke(new BasicStroke(1.0f, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+			g2d.setStroke(new BasicStroke(1.0f));
 			g2d.draw(rect);
 		}
 		
@@ -419,8 +535,36 @@ public class Board extends JPanel implements ActionListener {
 				score += 50;
 			} else {
 				g2d.setColor(new Color(255, 184, 174));
-				g2d.setStroke(new BasicStroke(2.0f, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER));
+				g2d.setStroke(new BasicStroke(2.0f));
 				g2d.draw(dot);
+			}	
+		}
+		
+		for (Iterator<Ellipse2D> iterator = powerTiles.iterator(); iterator.hasNext();) {
+			
+			Ellipse2D power = iterator.next();
+			
+			if (power.intersects(location)) {
+				
+				iterator.remove();
+				
+				if (ghostScareTimer.isRunning()) {
+					ghostScareTimer.restart();
+				} else {
+					ghostScareTimer.addActionListener(unscareGhosts);
+					ghostScareTimer.start();
+				}
+
+				for (Ghost ghost : ghosts) {
+					ghost.edible = true;
+					ghost.speed = 2;
+				}
+				
+			} else {
+				g2d.setPaint(new Color(255, 184, 174));
+				g2d.fill(power);
+				g2d.setStroke(new BasicStroke(1.0f));
+				g2d.draw(power);
 			}	
 		}
 	}
@@ -431,13 +575,14 @@ public class Board extends JPanel implements ActionListener {
 		g2d.setColor(new Color(255, 255, 255));
 		g2d.drawString("Score: " + score, 45, 30);
 		g2d.drawString("Lives: " + pacLives, 410, 30);
+		g2d.drawString("High-Score: " + topScorer + " " + highScore, 45, 355);
 	}
 	
-	private void checkWinGame() {
-		
+	private boolean checkWinCond() {
+		return dotTiles.isEmpty();
 	}
 	
-	private boolean checkLoseLife() {
+	private boolean checkGhostPacCollision() {
 		
 		Rectangle pacLoc = player.getBounds();
 		
@@ -446,7 +591,18 @@ public class Board extends JPanel implements ActionListener {
 			Rectangle ghostLoc = ghost.getBounds();
 			
 			if (pacLoc.intersects(ghostLoc)) {
-				return true;
+				
+				if (ghost.edible) {
+					
+					score += 250;
+					ghost.xPos = 248;
+					ghost.yPos = 181;
+					ghost.speed = 3;
+					ghost.edible = false;
+					
+				} else {
+					return true;
+				}
 			}
 		}
 		return false;
@@ -456,8 +612,8 @@ public class Board extends JPanel implements ActionListener {
 		
 		player.dirX = 0;
 		player.dirY = 0;
-		player.xPos = 68;
-		player.yPos = 72;
+		player.xPos = 248;
+		player.yPos = 218;
 		
 		for (int i = 0; i < ghosts.length; i++) {
 			ghosts[i].dirX = 0;
@@ -483,11 +639,13 @@ public class Board extends JPanel implements ActionListener {
 		width = 14;
 		height = 14;
 		
-		for (int i = 0; i < 4; i++) {
+		for (int i = 0; i < 5; i++) {
 			for (int j = 0; j < 2; j++) {
 				ghostImages.add(spriteSheet.getSubimage(j * width, i * height, width, height));
 			}
 		}
+		
+		pacLogo = ImageIO.read(new File("src/pac-logo.png"));
 	}
 	
 	public class GameKeys implements KeyListener {
@@ -508,8 +666,10 @@ public class Board extends JPanel implements ActionListener {
 				break;
 			case KeyEvent.VK_UP : player.setDirection(0, -1);
 				break;
-			case KeyEvent.VK_ESCAPE :
-				isRunning = false;
+			case KeyEvent.VK_ENTER : startGame();
+				break;
+			case KeyEvent.VK_ESCAPE : isRunning = false;
+				break;
 			}
 		}
 		
@@ -522,6 +682,21 @@ public class Board extends JPanel implements ActionListener {
 		}
 	}
 	
+	private void drawIntroScreen(Graphics2D g2d) {
+        
+        String title = "PA  MAN";
+
+        g2d.setColor(new Color(255, 255, 11));
+        g2d.setFont(new Font("Monospaced", Font.BOLD, 42));
+        g2d.drawString(title, 165, 200);
+        
+        String action = "Press enter to start";
+        g2d.setFont(new Font("SansSerif", Font.PLAIN, 24));
+        g2d.drawString(action, 145, 350);
+        
+        g2d.drawImage(pacLogo, 220, 168, null);
+	}
+	
 	private void drawPacman(Graphics2D g2d) {
 		
 		g2d.drawImage(pacImages.get(player.getImageNum()), player.xPos, player.yPos, null);
@@ -530,12 +705,53 @@ public class Board extends JPanel implements ActionListener {
 	private void drawGhosts(Graphics2D g2d) {
 		
 		for (int i = 0; i < ghosts.length; i++) {
-			g2d.drawImage(ghostImages.get(i * 2 + ghosts[i].getImageNum()), ghosts[i].xPos, ghosts[i].yPos, null);
+			
+			if (ghosts[i].edible) {
+				g2d.drawImage(ghostImages.get(8 + ghosts[i].getImageNum()), ghosts[i].xPos, ghosts[i].yPos, null);
+			} else {
+				g2d.drawImage(ghostImages.get(i * 2 + ghosts[i].getImageNum()), ghosts[i].xPos, ghosts[i].yPos, null);
+			}
 		}
 	}
 	
+	public void setHighScore() {
+		
+		String input = JOptionPane.showInputDialog("New high-score! Enter your initials: ");
+		String initials = input.length() > 3 ? input.substring(0, 3).toUpperCase() : input.toUpperCase();
+		
+		PrintWriter writer;
+		
+		try {
+			writer = new PrintWriter("src/high-score.txt", "UTF-8");
+			writer.println(initials);
+			writer.println(score);
+			writer.close();
+			
+		} catch (FileNotFoundException e) {
+			e.printStackTrace();
+		} catch (UnsupportedEncodingException e) {
+			e.printStackTrace();
+		}
+	}
+
+	ActionListener setGameFrameRate = new ActionListener() {
+		public void actionPerformed(ActionEvent e) {
+			repaint();
+		}
+	};
+	
+	ActionListener unscareGhosts = new ActionListener() {
+		public void actionPerformed(ActionEvent e) {
+			
+			for (Ghost ghost : ghosts) {
+				ghost.edible = false;
+				ghost.speed = 3;
+			}
+			ghostScareTimer.stop();
+		}
+	};
+
 	@Override
 	public void actionPerformed(ActionEvent e) {
-		repaint();
 	}
 }
